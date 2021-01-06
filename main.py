@@ -65,6 +65,13 @@ def context_experiment(num_arms, num_timesteps):
     Args:
         K (int): number of treatments.
         N (int): number of time steps to try.
+
+    Creates 4 plots:
+    - true_values_plot.png: Visualisation of true theta values with simulated bandit run.
+    - regret_plot.png: Visualisation of regret over time for bandit training.
+    - estimates_plot.png: Visualition of difference between true theta and estimated theta for each treatment arm,
+                          over time - meant to capture convergence.
+    - theta_plot.png: Visaulisation of true theta and estimated theta for each dimension of theta.
     """
     num_features = 5
     BEST_ARMS = [3, 7, 9, 15]
@@ -95,7 +102,6 @@ def context_experiment(num_arms, num_timesteps):
     plt.legend()
     plt.savefig("regret_plot.png", dpi=300)
     plt.close()
-
 
     # Plot estimated theta values in comparison to true theta, for each dimension
     fig = plt.figure(figsize=(4 * num_features, 4))
