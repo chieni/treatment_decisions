@@ -32,8 +32,3 @@ class ContextualBandit():
         signal = self.true_theta[arm_idx].dot(value)
         noise = np.random.normal(scale=scale_noise)
         return (signal + noise)
-        # if (signal + noise) < 0.3:
-        #     return 0
-        # return 1
-
-
