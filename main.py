@@ -113,6 +113,7 @@ def context_experiment(num_arms, num_timesteps):
         ax.plot(range(bandit.num_arms), final_theta[:, feature_idx], 'x', markeredgewidth=2)
         ax.set_xlabel('Treatment arm')
         ax.set_ylabel('Theta')
+        ax.set_xticks(range(num_arms))
     
     fig.tight_layout()
     fig.savefig("theta_plot.png", dpi=300)
