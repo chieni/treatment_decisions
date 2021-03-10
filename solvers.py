@@ -1,101 +1,157 @@
+import math
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+from utils import NormalDist, AvailabilityType
+
 
 class Solver:
-    def __init__(self, bandit, init_proba):
+    def __init__(self, bandit, availability_type, init_proba):
         """
         bandit (Bandit): the target bandit to solve.
         """
         self.bandit = bandit
+        self.availability_type = availability_type
 
         self.counts = [0] * self.bandit.num_arms
         self.actions = []  # A list of machine ids, 0 to bandit.n-1.
         self.regret = 0.  # Cumulative regret.
         self.regrets = [0.]  # History of cumulative regret.
+
+        # self.estimates is the empirical mean of the observed reward samples
         self.estimates = [init_proba] * self.bandit.num_arms # Optimistic initialization
+        self.timestep = 0
 
     def update_regret(self, selected_arm):
         # i (int): index of the selected machine.
         self.regret += self.bandit.best_reward_prob - self.bandit.reward_probs[selected_arm]
         self.regrets.append(self.regret)
 
+    def availability_function(self, sample_risk_score, uncertainties):
+        all_arms_indices = self.bandit.arm_indices
+        num_arms = self.bandit.num_arms
+
+        # Select first fraction of arms based on risk score
+        if self.availability_type == AvailabilityType.first_fraction:
+            end_idx = max(1, int(sample_risk_score * num_arms))
+            return all_arms_indices[:end_idx]
+        
+        if self.availability_type == AvailabilityType.mean_estimates:
+            # Note: if everything is equal, do not sort the array, otherwise the array just flips
+            if len(set(self.estimates)) == 1:
+                sorted_estimates = list(all_arms_indices)
+            else:
+                sorted_estimates = np.argsort(self.estimates)[::-1]
+            end_idx = max(1, int(sample_risk_score * num_arms))
+            return sorted_estimates[:end_idx]
+
+        if self.availability_type == AvailabilityType.uncertainty_estimates:
+            if len(set(uncertainties)) == 1:
+                sorted_uncertainties = list(all_arms_indices)
+            else:
+                sorted_uncertainties = np.argsort(uncertainties)
+            end_idx = max(1, int(sample_risk_score * num_arms))
+            return sorted_uncertainties[:end_idx]
+            
+        return all_arms_indices
+    
+    def get_uncertainty(self, arm):
+        return np.sqrt(2. * np.log(self.timestep) / (self.counts[arm] + 1)) 
+
     def run_one_step(self):
         """Return the machine index to take action on."""
         raise NotImplementedError
 
-    def run(self, num_steps):
-        assert self.bandit is not None
+    def run(self, num_steps, risk_sampler):
+        metric_dicts = []
         for _ in range(num_steps):
-            selected_arm = self.run_one_step()
+            sample_risk_score = risk_sampler.sample_one()
+            selected_arm = self.run_one_step(sample_risk_score)
 
             self.counts[selected_arm] += 1
             self.actions.append(selected_arm)
             self.update_regret(selected_arm)
 
+            metric_dicts.append({
+                'risk_score': sample_risk_score,
+                'selected_arm': selected_arm
+            })
+        return pd.DataFrame(metric_dicts)
+
 class EpsilonGreedy(Solver):
 
-    def __init__(self, bandit, epsilon, init_proba=1.0):
+    def __init__(self, bandit, epsilon, availability_type=None, init_proba=1.0):
         """
         eps (float): the probability to explore at each time step.
         init_proba (float): default to be 1.0; optimistic initialization
         """
-        super().__init__(bandit, init_proba)
+        super().__init__(bandit, availability_type, init_proba)
 
         assert 0. <= epsilon <= 1.0
         self.epsilon = epsilon
 
-        self.estimates = [init_proba] * self.bandit.num_arms # Optimistic initialization
+    def run_one_step(self, sample_risk_score):
+        self.timestep += 1
+        uncertainties = [self.get_uncertainty(arm) for arm in self.bandit.arm_indices]
+        available_arms = self.availability_function(sample_risk_score, uncertainties)
 
-    def run_one_step(self):
         if np.random.random() < self.epsilon:
             # Let's do random exploration!
-            selected_arm = np.random.randint(0, self.bandit.num_arms)
+            selected_arm = np.random.choice(available_arms)
+            #selected_arm = np.random.randint(0, self.bandit.num_arms)
         else:
             # Pick the best one.
-            selected_arm = max(range(self.bandit.num_arms), key=lambda x: self.estimates[x])
+            selected_arm = max(available_arms, key=lambda x: self.estimates[x])
+            #selected_arm = max(range(self.bandit.num_arms), key=lambda x: self.estimates[x])
 
-        r = self.bandit.select_arm(selected_arm)
-        self.estimates[selected_arm] += 1. / (self.counts[selected_arm] + 1) * (r - self.estimates[selected_arm])
+        reward = self.bandit.select_arm(selected_arm)
+        self.estimates[selected_arm] += 1. / (self.counts[selected_arm] + 1) * (reward - self.estimates[selected_arm])
 
         return selected_arm
 
 class UCB(Solver):
-    def __init__(self, bandit, init_proba=1.0):
+    '''
+    UCB1
+    '''
+    def __init__(self, bandit, availability_type=None, init_proba=1.0):
         """
         eps (float): the probability to explore at each time step.
-        init_proba (float): default to be 1.0; optimistic initialization
         """
-        super().__init__(bandit, init_proba)
-        self.estimates = [init_proba] * self.bandit.num_arms # Optimistic initialization
+        super().__init__(bandit, availability_type, init_proba)
 
-        self.threshold = 0
-
-    def run_one_step(self):
-        self.threshold += 1
+    def run_one_step(self, sample_risk_score):
+        self.timestep += 1
 
         # Pick the best one with consideration of upper confidence bounds.
-        bounds = [self.get_ucb(arm) for arm in range(self.bandit.num_arms)]
-        selected_arm = np.argmax(bounds)
+        # bounds = [self.get_ucb(arm) for arm in range(self.bandit.num_arms)]
+        # selected_arm = np.argmax(bounds)
+        uncertainties = [self.get_uncertainty(arm) for arm in self.bandit.arm_indices]
+        available_arms = self.availability_function(sample_risk_score, uncertainties)
+
+        bounds = {arm: self.get_ucb(arm) for arm in available_arms}
+        selected_arm = max(bounds, key=bounds.get)
+        
         reward = self.bandit.select_arm(selected_arm)
+        self.estimates[selected_arm] += 1. / (self.counts[selected_arm] + 1) * (reward - self.estimates[selected_arm])
 
-        #self.estimates[selected_arm] += 1. / (self.counts[selected_arm] + 1) * (reward - self.estimates[selected_arm])
-
-        self.estimates[selected_arm] = (reward + (self.estimates[selected_arm] * self.counts[selected_arm])) / (self.counts[selected_arm] + 1)
+        #self.estimates[selected_arm] = (reward + (self.estimates[selected_arm] * self.counts[selected_arm])) / (self.counts[selected_arm] + 1)
         return selected_arm
-    
+
     def get_ucb(self, arm):
-        ucb = self.estimates[arm] + np.sqrt(2. * np.log(self.threshold) / (self.counts[arm] + 1))
+        # if self.counts[arm] == 0:
+        #     return math.inf
+        ucb = self.estimates[arm] + self.get_uncertainty(arm)
         return ucb
 
 
-class LinUCB(Solver):
+class LinUCB:
     def __init__(self, bandit, alpha=2.0, init_proba=1.0):
         """
         eps (float): the probability to explore at each time step.
         init_proba (float): default to be 1.0; optimistic initialization
         """
-        super().__init__(bandit, init_proba)
+        self.bandit = bandit
         self.alpha = alpha
         assert self.bandit.context is not None
         self.context_dim = self.bandit.context.shape[-1]

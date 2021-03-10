@@ -1,10 +1,12 @@
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bandits import BernoulliBandit, ContextualBandit
+from bandits import BernoulliBandit, ContextualBandit, GaussianBandit
 from solvers import Solver, EpsilonGreedy, UCB, LinUCB
 from plots import *
+from utils import NormalDist
 
 
 def make_design_matrix(n_trial, n_arms, n_feature):
@@ -35,21 +37,21 @@ def experiment(num_arms, timesteps):
         K (int): number of treatments.
         N (int): number of time steps to try.
     """
-    bandit = BernoulliBandit(num_arms, context=context)
+    bandit = BernoulliBandit(num_arms)
     print("Randomly generated Bernoulli bandit has reward probabilities:\n", bandit.reward_probs)
     print("The best treatment has index: {} and proba: {}".format(
         max(range(num_arms), key=lambda i: bandit.reward_probs[i]), max(bandit.reward_probs))
     )
 
     test_solvers = [
-        # EpsilonGreedy(bandit, 0.1),
-        # UCB(bandit),
-        LinUCB(bandit)
+        EpsilonGreedy(bandit, 0.1),
+        UCB(bandit),
+       # LinUCB(bandit)
     ]
     names = [
-        # r'$\epsilon$' + '-Greedy',
-        # "UCB",
-        "LinUCB"
+        r'$\epsilon$' + '-Greedy',
+        "UCB",
+        #"LinUCB"
     ]
 
     for solver in test_solvers:
@@ -119,4 +121,4 @@ def context_experiment(num_arms, num_timesteps):
     fig.savefig("theta_plot.png", dpi=300)
 
 if __name__ == '__main__':
-    context_experiment(16, 2000)
+    context_experiment(5, 200)

@@ -1,9 +1,12 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns 
+
+from solvers import Solver
 
 
-def plot_results(solvers, solver_names, figname):
+def plot_results(solvers, solver_names, metric_frame, figname):
     """
     Plot the results by multi-armed bandit solvers.
     Args:
@@ -17,12 +20,13 @@ def plot_results(solvers, solver_names, figname):
 
     b = solvers[0].bandit
 
-    fig = plt.figure(figsize=(14, 4))
+    fig = plt.figure(figsize=(16, 4))
     fig.subplots_adjust(bottom=0.3, wspace=0.3)
 
-    ax1 = fig.add_subplot(131)
-    ax2 = fig.add_subplot(132)
-    ax3 = fig.add_subplot(133)
+    ax1 = fig.add_subplot(141)
+    ax2 = fig.add_subplot(142)
+    ax3 = fig.add_subplot(143)
+    ax4 = fig.add_subplot(144)
 
     # Sub.fig. 1: Regrets in time.
     for i, s in enumerate(solvers):
@@ -39,7 +43,7 @@ def plot_results(solvers, solver_names, figname):
     ax2.plot(range(b.num_arms), [b.reward_probs[x] for x in sorted_indices], 'k--', markersize=12)
     for s in solvers:
         ax2.plot(range(b.num_arms), [s.estimates[x] for x in sorted_indices], 'x', markeredgewidth=2)
-    ax2.set_xlabel('Actions sorted by ' + r'$\theta$')
+    ax2.set_xlabel('Actions by index')
     ax2.set_ylabel('Estimated')
     ax2.grid('k', ls='--', alpha=0.3)
 
@@ -50,6 +54,12 @@ def plot_results(solvers, solver_names, figname):
     ax3.set_ylabel('Frac. # trials')
     ax3.grid('k', ls='--', alpha=0.3)
 
+    # Sub.fig. 4: Distribution of treatments by risk score
+    metric_frame['risk_category'] = pd.cut(metric_frame['risk_score'], bins=[0, 0.33, 0.66, 1], labels=['high', 'med', 'low'])
+    counts_frame = metric_frame[['selected_arm', 'risk_category']].value_counts().reset_index(name='count')
+    sns.lineplot(x='selected_arm', y='count', hue='risk_category', data=counts_frame, ax=ax4, marker='o')
+    ax4.set_xlabel('Actions by index')
+    ax4.set_ylabel('Number of samples by risk score category')
     plt.savefig(figname)
 
 
