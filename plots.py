@@ -57,9 +57,11 @@ def plot_results(solvers, solver_names, metric_frame, figname):
     # Sub.fig. 4: Distribution of treatments by risk score
     metric_frame['risk_category'] = pd.cut(metric_frame['risk_score'], bins=[0, 0.33, 0.66, 1], labels=['high', 'med', 'low'])
     counts_frame = metric_frame[['selected_arm', 'risk_category']].value_counts().reset_index(name='count')
+    counts_frame['count'] = counts_frame['count'] / counts_frame['count'].sum()
     sns.lineplot(x='selected_arm', y='count', hue='risk_category', data=counts_frame, ax=ax4, marker='o')
+    ax4.set_xlim((0, b.num_arms))
     ax4.set_xlabel('Actions by index')
-    ax4.set_ylabel('Number of samples by risk score category')
+    ax4.set_ylabel('Fraction of samples by risk score category')
     plt.savefig(figname)
 
 

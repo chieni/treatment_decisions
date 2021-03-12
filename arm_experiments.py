@@ -55,7 +55,7 @@ def arms_experiment(timesteps, output_directory):
         K (int): number of treatments.
         N (int): number of time steps to try.
     """
-    availability_type = AvailabilityType.uncertainty_estimates
+    availability_type = None#AvailabilityType.uncertainty_estimates
     num_arms = 10
     num_schemes = 4
     scheme_dists = []
@@ -81,17 +81,18 @@ def arms_experiment(timesteps, output_directory):
         bandit = GaussianBandit(num_arms, reward_dists)
 
         test_solvers = [
-            EpsilonGreedy(bandit, 0.1, availability_type),
+           EpsilonGreedy(bandit, 0.1, availability_type),
             UCB(bandit, availability_type)
         ]
         names = [
-            r'$\epsilon$' + '-Greedy',
+           r'$\epsilon$' + '-Greedy',
             "UCB",
         ]
 
         for solver in test_solvers:
             risk_sampler = RiskSampler()
             metric_frame = solver.run(timesteps, risk_sampler)
+
 
         if not os.path.exists(output_directory):
             os.makedirs(output_directory)
@@ -101,4 +102,4 @@ def arms_experiment(timesteps, output_directory):
 
 
 if __name__ == '__main__':
-    arms_experiment(10000, "results/arms/uncertainty_estimates1")
+    arms_experiment(10000, "results/arms/all_available3")

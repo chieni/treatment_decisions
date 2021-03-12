@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from utils import NormalDist, AvailabilityType
 
 
+np.random.seed(10)
+
 class Solver:
     def __init__(self, bandit, availability_type, init_proba):
         """
@@ -121,6 +123,7 @@ class UCB(Solver):
         super().__init__(bandit, availability_type, init_proba)
 
     def run_one_step(self, sample_risk_score):
+        epsilon = 0.01
         self.timestep += 1
 
         # Pick the best one with consideration of upper confidence bounds.
@@ -130,8 +133,16 @@ class UCB(Solver):
         available_arms = self.availability_function(sample_risk_score, uncertainties)
 
         bounds = {arm: self.get_ucb(arm) for arm in available_arms}
+
         selected_arm = max(bounds, key=bounds.get)
-        
+        max_arms = [selected_arm]
+        for arm, bound in bounds.items():
+            if arm != selected_arm:
+                if bound + epsilon > bounds[selected_arm]:
+                    max_arms.append(arm)
+
+        selected_arm = np.random.choice(max_arms)
+
         reward = self.bandit.select_arm(selected_arm)
         self.estimates[selected_arm] += 1. / (self.counts[selected_arm] + 1) * (reward - self.estimates[selected_arm])
 
