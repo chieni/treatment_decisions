@@ -18,6 +18,7 @@ class BernoulliBandit():
         else:
             self.reward_probs = reward_probs
         self.best_reward_prob = max(self.reward_probs)
+        self.reward_variances = None
         
     def select_arm(self, arm_idx):
         '''
@@ -39,6 +40,7 @@ class GaussianBandit():
             self.reward_dists = reward_dists
         self.reward_probs = [dist.mean for dist in self.reward_dists]
         self.best_reward_prob = max(self.reward_probs)
+        self.reward_variances = [dist.variance for dist in self.reward_dists]
     
     def _generate_random_rewards(self, num_arms):
         return [NormalDist.generate_random_dist() for arm in num_arms]

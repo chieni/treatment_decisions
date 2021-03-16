@@ -55,7 +55,7 @@ def arms_experiment(timesteps, output_directory):
         K (int): number of treatments.
         N (int): number of time steps to try.
     """
-    availability_type = None#AvailabilityType.uncertainty_estimates
+    availability_type = AvailabilityType.first_fraction
     num_arms = 10
     num_schemes = 4
     scheme_dists = []
@@ -82,24 +82,29 @@ def arms_experiment(timesteps, output_directory):
 
         test_solvers = [
            EpsilonGreedy(bandit, 0.1, availability_type),
-            UCB(bandit, availability_type)
+           UCB(bandit, availability_type)
         ]
         names = [
            r'$\epsilon$' + '-Greedy',
             "UCB",
         ]
 
+        risk_sampler = RiskSampler()
+        metric_frames = []
+        predicted_uncertainties = []
         for solver in test_solvers:
-            risk_sampler = RiskSampler()
-            metric_frame = solver.run(timesteps, risk_sampler)
+            metric_frame, final_uncertainties = solver.run(timesteps, risk_sampler)
+            metric_frames.append(metric_frame)
+            predicted_uncertainties.append(final_uncertainties)
 
 
         if not os.path.exists(output_directory):
             os.makedirs(output_directory)
 
         plot_filename = os.path.join(output_directory, f"results_K{num_arms}_N{timesteps}_scheme{idx}.png")
-        plot_results(test_solvers, names, metric_frame, plot_filename)
+        plot_results(test_solvers, names, metric_frames, predicted_uncertainties, plot_filename)
 
 
 if __name__ == '__main__':
-    arms_experiment(10000, "results/arms/all_available3")
+    np.random.seed(2)
+    arms_experiment(10000, "results/arms/first_fraction2")
