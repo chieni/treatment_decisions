@@ -47,7 +47,7 @@ def _get_increasing_means_dist(num_arms, variance=1):
 def _get_increasing_variance_dist(num_arms, mean=0):
     return [NormalDist(mean, (0.5 * arm) + 0.5) for arm in range(num_arms)]
 
-def arms_experiment(timesteps, output_directory):
+def arms_experiment(timesteps, output_directory, num_trials=1):
     """
     Run a small experiment on solving a Bernoulli bandit with K treatments,
     each with a randomly initialized reward probability.
@@ -55,7 +55,7 @@ def arms_experiment(timesteps, output_directory):
         K (int): number of treatments.
         N (int): number of time steps to try.
     """
-    availability_type = AvailabilityType.first_fraction
+    availability_type = None#AvailabilityType.uncertainty_estimates
     num_arms = 10
     num_schemes = 4
     scheme_dists = []
@@ -77,34 +77,45 @@ def arms_experiment(timesteps, output_directory):
     scheme_dists.append(scheme4_dists)
 
     for idx in range(num_schemes):
-        reward_dists = scheme_dists[idx]
-        bandit = GaussianBandit(num_arms, reward_dists)
+        solver_names = []
+        all_metric_frames = []
+        all_arms_frames = []
+        for trial in range(num_trials):
+            reward_dists = scheme_dists[idx]
+            bandit = GaussianBandit(num_arms, reward_dists)
 
-        test_solvers = [
-           EpsilonGreedy(bandit, 0.1, availability_type),
-           UCB(bandit, availability_type)
-        ]
-        names = [
-           r'$\epsilon$' + '-Greedy',
-            "UCB",
-        ]
+            test_solvers = {
+            r'$\epsilon$' + '-Greedy': EpsilonGreedy(bandit, 0.1, availability_type),
+            "UCB": UCB(bandit, availability_type)
+            }
 
-        risk_sampler = RiskSampler()
-        metric_frames = []
-        predicted_uncertainties = []
-        for solver in test_solvers:
-            metric_frame, final_uncertainties = solver.run(timesteps, risk_sampler)
-            metric_frames.append(metric_frame)
-            predicted_uncertainties.append(final_uncertainties)
+            risk_sampler = RiskSampler()
+            metric_frames = []
+            arms_frames = []
+            for solver_name, solver in test_solvers.items():
+                solver_names.append(solver_name)
+                metric_frame, arms_frame = solver.run(timesteps, risk_sampler)
+                arms_frame['true_mean'] = [dist.mean for dist in reward_dists]
+                arms_frame['true_uncertainty'] = [dist.std for dist in reward_dists]
+                metric_frames.append(metric_frame)
+                arms_frames.append(arms_frame)
+
+                metric_frame['trial'] = trial
+                arms_frame['trial'] = trial
+                all_metric_frames.append(metric_frame)
+                all_arms_frames.append(arms_frame)
 
 
-        if not os.path.exists(output_directory):
-            os.makedirs(output_directory)
+            plot_directory = os.path.join(output_directory, str(trial))
+            if not os.path.exists(plot_directory):
+                os.makedirs(plot_directory)
 
-        plot_filename = os.path.join(output_directory, f"results_K{num_arms}_N{timesteps}_scheme{idx}.png")
-        plot_results(test_solvers, names, metric_frames, predicted_uncertainties, plot_filename)
+            plot_filename = os.path.join(plot_directory, f"results_K{num_arms}_N{timesteps}_scheme{idx}_trial{trial}.png")
+            plot_results(solver_names, metric_frames, arms_frames, plot_filename)
+
+        plot_all_filename = os.path.join(output_directory, f"all_results_K{num_arms}_N{timesteps}_scheme{idx}.png")
+        plot_results_all_trials(solver_names, all_metric_frames, all_arms_frames, plot_all_filename)
 
 
 if __name__ == '__main__':
-    np.random.seed(2)
-    arms_experiment(10000, "results/arms/first_fraction2")
+    arms_experiment(10000, "results/040121_arms/all_available", 20)

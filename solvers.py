@@ -19,7 +19,6 @@ class Solver:
         self.counts = [0] * self.bandit.num_arms
         self.cumulative_reward = 0.
         self.regret = 0.  # Cumulative regret.
-        self.regrets = [0.]  # History of cumulative regret.
 
         # self.estimates is the empirical mean of the observed reward samples
         self.estimates = [init_proba] * self.bandit.num_arms # Optimistic initialization
@@ -27,10 +26,11 @@ class Solver:
     def update_regret(self, selected_arm):
         # i (int): index of the selected machine.
         self.regret += self.bandit.best_reward_prob - self.bandit.reward_probs[selected_arm]
-        self.regrets.append(self.regret)
+        return self.regret
     
     def update_reward(self, reward):
         self.cumulative_reward += reward
+        return self.cumulative_reward
 
     def availability_function(self, sample_risk_score, uncertainties):
         all_arms_indices = self.bandit.arm_indices
@@ -66,45 +66,47 @@ class Solver:
         self.estimates[selected_arm] += 1. / (self.counts[selected_arm]) * (reward - self.estimates[selected_arm])
         return reward
 
-    def run_one_step(self):
+    def select_arm(self):
         """Return the machine index to take action on."""
         raise NotImplementedError
-
+    
+    def run_one_step(self, timestep, selected_arm, risk_score=-1):
+        self.counts[selected_arm] += 1
+        reward = self.update_estimates(selected_arm)
+        updated_reward = self.update_reward(reward)
+        updated_regret = self.update_regret(selected_arm)
+        metric_dict = {
+            'timestep': timestep,
+            'risk_score': risk_score,
+            'selected_arm': selected_arm,
+            'reward': updated_reward,
+            'regret': updated_regret
+        }
+        return metric_dict
+        
     def run(self, num_steps, risk_sampler):
         metric_dicts = []
         timestep = 0
+
         # Try sampling each arm once to start off with
         for arm_idx in self.bandit.arm_indices:
-            self.counts[arm_idx] += 1
-            reward = self.update_estimates(arm_idx)
-            self.update_reward(reward)
-            self.update_regret(arm_idx)
-            metric_dicts.append({
-                'timestep': timestep, 
-                'risk_score': -1,
-                'selected_arm': arm_idx,
-                'reward': self.cumulative_reward
-            })
+            metric_dict = self.run_one_step(timestep, arm_idx)
+            metric_dicts.append(metric_dict)
             timestep += 1
 
         for _ in range(num_steps):
             sample_risk_score = risk_sampler.sample_one()
-            selected_arm = self.run_one_step(sample_risk_score, timestep)
-            self.counts[selected_arm] += 1
-            reward = self.update_estimates(selected_arm)
-            self.update_reward(reward)
-            self.update_regret(selected_arm)
-
-            metric_dicts.append({
-                'timestep': timestep,
-                'risk_score': sample_risk_score,
-                'selected_arm': selected_arm,
-                'reward': self.cumulative_reward
-            })
+            selected_arm = self.select_arm(sample_risk_score, timestep)
+            metric_dict = self.run_one_step(timestep, selected_arm, sample_risk_score)
+            metric_dicts.append(metric_dict)
             timestep += 1
 
         final_uncertainties = [self.get_uncertainty(arm, timestep) for arm in self.bandit.arm_indices]
-        return pd.DataFrame(metric_dicts), final_uncertainties
+        arms_dict = {'arm_idx': self.bandit.arm_indices,
+                     'uncertainty_estimate': final_uncertainties,
+                     'mean_estimate': self.estimates,
+                     'count': self.counts}
+        return pd.DataFrame(metric_dicts), pd.DataFrame(arms_dict)
 
 class EpsilonGreedy(Solver):
 
@@ -118,7 +120,7 @@ class EpsilonGreedy(Solver):
         assert 0. <= epsilon <= 1.0
         self.epsilon = epsilon
 
-    def run_one_step(self, sample_risk_score, timestep):
+    def select_arm(self, sample_risk_score, timestep):
         uncertainties = [self.get_uncertainty(arm, timestep) for arm in self.bandit.arm_indices]
         available_arms = self.availability_function(sample_risk_score, uncertainties)
 
@@ -131,6 +133,7 @@ class EpsilonGreedy(Solver):
 
         return selected_arm
 
+
 class UCB(Solver):
     '''
     UCB1
@@ -141,7 +144,7 @@ class UCB(Solver):
         """
         super().__init__(bandit, availability_type, init_proba)
 
-    def run_one_step(self, sample_risk_score, timestep):
+    def select_arm(self, sample_risk_score, timestep):
         epsilon = 0.01
 
         # Pick the best one with consideration of upper confidence bounds.

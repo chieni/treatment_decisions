@@ -6,20 +6,114 @@ import seaborn as sns
 
 from solvers import Solver
 
+def regret_subplot(data, ax):
+    # Sub.fig. 1: Regrets in time.
+    sns.lineplot(x='timestep', y='regret', hue='solver', data=data, ax=ax)
+    ax.set_xlabel('Time step')
+    ax.set_ylabel('Cumulative regret')
+    ax.grid('k', ls='--', alpha=0.3)
 
-def plot_results(solvers, solver_names, metric_frames, predicted_uncertainties, figname):
+def reward_subplot(data, ax):
+    # Sub.fig. 2: Cumulative rewards over time
+    sns.lineplot(x='timestep', y='reward', hue='solver', data=data, ax=ax)
+    ax.set_xlabel('Time step')
+    ax.set_ylabel('Cumulative reward')
+    ax.grid('k', ls='--', alpha=0.3)
+
+def mean_estimate_subplot(arm_indices, true_means, data, ax):
+    # Sub.fig. 3: Probabilities estimated by solvers.
+    ax.plot(arm_indices, [true_means[x] for x in arm_indices], 'k--', markersize=12, label='ground truth')
+    sns.pointplot(x='arm_idx', y='mean_estimate', hue='solver', data=data, ci='sd', legend=True, ax=ax, join=False)
+    ax.set_xlabel('Actions by index')
+    ax.set_ylabel('Estimated mean')
+    ax.grid('k', ls='--', alpha=0.3)
+
+def std_estimate_subplot(arm_indices, true_stds, data, ax):
+    # Sub.fig. 4: Estimated uncertainties
+    ax.plot(arm_indices, [true_stds[x] for x in arm_indices], 'k--', markersize=12, label='ground truth std')
+    sns.pointplot(x='arm_idx', y='uncertainty_estimate', hue='solver', data=data, ci='sd', legend=True, ax=ax, join=False)
+    ax.set_xlabel('Actions by index')
+    ax.set_ylabel('Estimated uncertainty')
+    ax.grid('k', ls='--', alpha=0.3)
+
+def action_counts_subplot(num_timesteps, data, ax):
+    # Sub.fig. 5: Action counts
+    data['fraction'] = data['count'] / float(num_timesteps)
+    sns.lineplot(x='arm_idx', y='fraction', hue='solver', data=data, legend=True, ax=ax)
+    ax.set_xlabel('Actions by index')
+    ax.set_ylabel('Fraction of samples')
+    ax.grid('k', ls='--', alpha=0.3)
+
+def risk_tolerance_subplot(data, metric_frames, solver_axes, solver_names, num_arms, has_trials=False):
+    # Sub.fig. 6, 7: Distribution of treatments by risk score
+    for idx, solver_name in enumerate(set(solver_names)):
+        metric_frame = data[data['solver'] == solver_name]
+        axis = solver_axes[idx]
+        metric_frame['risk_tolerance'] = pd.cut(metric_frame['risk_score'], bins=[0, 0.33, 0.66, 1], labels=['low', 'med', 'high'])
+        if has_trials:
+            counts_frame = metric_frame[['selected_arm', 'risk_tolerance', 'trial']].value_counts().reset_index(name='count')
+        else:
+            counts_frame = metric_frame[['selected_arm', 'risk_tolerance']].value_counts().reset_index(name='count')
+        counts_frame['count'] = counts_frame['count'] / counts_frame['count'].sum()
+
+        sns.lineplot(x='selected_arm', y='count', hue='risk_tolerance', data=counts_frame, ax=axis, marker='o')
+        axis.set_title(solver_names[idx])
+        axis.set_xlim((0, num_arms))
+        axis.set_xlabel('Actions by index')
+        axis.set_ylabel('Fraction of samples')
+        axis.grid('k', ls='--', alpha=0.3)
+
+def plot_results_all_trials(solver_names, metric_frames, arms_frames, plot_filename):
+    fig = plt.figure(figsize=(24, 12))
+    gs = gridspec.GridSpec(2, 4)
+    # fig.subplots_adjust(bottom=0.3, wspace=0.3)
+
+    ax1 = plt.subplot(gs[0])
+    ax2 = plt.subplot(gs[1])
+    ax3 = plt.subplot(gs[2])
+    ax4 = plt.subplot(gs[3])
+
+    ax5 = plt.subplot(gs[4])
+    ax6 = plt.subplot(gs[5])
+    ax7 = plt.subplot(gs[6])
+
+    # Concatenate metric frames for all types of solvers
+    all_metric_frames = []
+    for idx, metric_frame in enumerate(metric_frames):
+        metric_frame['solver'] = solver_names[idx]
+        all_metric_frames.append(metric_frame)
+    all_metric_frame = pd.concat(all_metric_frames)
+
+    all_arms_frames = []
+    for idx, arms_frame in enumerate(arms_frames):
+        arms_frame['solver'] = solver_names[idx]
+        all_arms_frames.append(arms_frame)
+    all_arms_frame = pd.concat(all_arms_frames)
+
+    num_arms = all_arms_frame['arm_idx'].unique().shape[0]
+    num_timesteps = all_metric_frame['timestep'].max()
+    true_means = arms_frames[0]['true_mean'].values
+    true_stds = arms_frames[0]['true_uncertainty'].values
+    sorted_indices = range(num_arms)
+    solver_axes = [ax6, ax7]
+
+    regret_subplot(all_metric_frame, ax1)
+    reward_subplot(all_metric_frame, ax2)
+    mean_estimate_subplot(sorted_indices, true_means, all_arms_frame, ax3)
+    std_estimate_subplot(sorted_indices, true_stds, all_arms_frame, ax4)
+    action_counts_subplot(num_timesteps, all_arms_frame, ax5)
+    risk_tolerance_subplot(all_metric_frame, metric_frames, solver_axes, solver_names, num_arms, True)
+
+    plt.savefig(plot_filename)
+    plt.close()
+
+def plot_results(solver_names, metric_frames, arms_frames, plot_filename):
     """
     Plot the results by multi-armed bandit solvers.
     Args:
-        solvers (list<Solver>): All of them should have been fitted.
         solver_names (list<str)
-        figname (str)
+        plot_filename (str)
     """
-    assert len(solvers) == len(solver_names)
-    assert all(map(lambda s: isinstance(s, Solver), solvers))
-    assert all(map(lambda s: len(s.regrets) > 0, solvers))
-
-    b = solvers[0].bandit
 
     fig = plt.figure(figsize=(24, 12))
     gs = gridspec.GridSpec(2, 4)
@@ -34,79 +128,35 @@ def plot_results(solvers, solver_names, metric_frames, predicted_uncertainties, 
     ax6 = plt.subplot(gs[5])
     ax7 = plt.subplot(gs[6])
 
-    # ax1 = fig.add_subplot(151)
-    # ax2 = fig.add_subplot(152)
-    # ax3 = fig.add_subplot(153)
-    # ax4 = fig.add_subplot(154)
-    # ax5 = fig.add_subplot(155)
-
-    # Sub.fig. 1: Regrets in time.
-    for i, s in enumerate(solvers):
-        ax1.plot(range(len(s.regrets)), s.regrets, label=solver_names[i])
-    ax1.set_xlabel('Time step')
-    ax1.set_ylabel('Cumulative regret')
-    ax1.legend()
-    ax1.grid('k', ls='--', alpha=0.3)
-
-    # Sub.fig. 2: Cumulative rewards over time
+    # Concatenate metric frames for all types of solvers
     all_metric_frames = []
     for idx, metric_frame in enumerate(metric_frames):
         metric_frame['solver'] = solver_names[idx]
         all_metric_frames.append(metric_frame)
     all_metric_frame = pd.concat(all_metric_frames)
-    sns.lineplot(x='timestep', y='reward', hue='solver', data=all_metric_frame, ax=ax2)
-    ax2.set_xlabel('Time step')
-    ax2.set_ylabel('Cumulative reward')
-    ax2.grid('k', ls='--', alpha=0.3)
 
+    all_arms_frames = []
+    for idx, arms_frame in enumerate(arms_frames):
+        arms_frame['solver'] = solver_names[idx]
+        all_arms_frames.append(arms_frame)
+    all_arms_frame = pd.concat(all_arms_frames)
 
-    # Sub.fig. 3: Probabilities estimated by solvers.
-    #sorted_indices = sorted(range(b.num_arms), key=lambda x: b.reward_probs[x])
-    sorted_indices = range(b.num_arms)
-    ax3.plot(range(b.num_arms), [b.reward_probs[x] for x in sorted_indices], 'k--', markersize=12, label='ground truth')
-    for idx, s in enumerate(solvers):
-        ax3.plot(range(b.num_arms), [s.estimates[x] for x in sorted_indices], 'x', markeredgewidth=2, label=solver_names[idx])
-    ax3.legend()
-    ax3.set_xlabel('Actions by index')
-    ax3.set_ylabel('Estimated mean')
-    ax3.grid('k', ls='--', alpha=0.3)
-
-    # Sub.fig. 4: Estimated uncertainties
-    if b.reward_variances is not None:
-        ax4.plot(range(b.num_arms), [np.sqrt(b.reward_variances[x]) for x in sorted_indices], 'k--', markersize=12, label='ground truth std')
-    for idx, s in enumerate(solvers):
-        ax4.plot(range(b.num_arms), [predicted_uncertainties[idx][x] for x in sorted_indices], 'x', markeredgewidth=2, label=solver_names[idx])
-    ax4.legend()
-    ax4.set_xlabel('Actions by index')
-    ax4.set_ylabel('Estimated uncertainty')
-    ax4.grid('k', ls='--', alpha=0.3)
-
-
-    # Sub.fig. 5: Action counts
-    for idx, s in enumerate(solvers):
-        ax5.plot(range(b.num_arms), np.array(s.counts) / float(len(s.regrets)), label=solver_names[idx])
-    ax5.legend()
-    ax5.set_xlabel('Actions by index')
-    ax5.set_ylabel('Frac. # trials')
-    ax5.grid('k', ls='--', alpha=0.3)
-
-
-    # Sub.fig. 6, 7: Distribution of treatments by risk score
+    num_arms = all_arms_frame['arm_idx'].unique().shape[0]
+    num_timesteps = all_metric_frame['timestep'].max()
+    true_means = arms_frames[0]['true_mean'].values
+    true_stds = arms_frames[0]['true_uncertainty'].values
+    sorted_indices = range(num_arms)
     solver_axes = [ax6, ax7]
-    for idx, metric_frame in enumerate(metric_frames):
-        axis = solver_axes[idx]
-        metric_frame['risk_tolerance'] = pd.cut(metric_frame['risk_score'], bins=[0, 0.33, 0.66, 1], labels=['low', 'med', 'high'])
-        counts_frame = metric_frame[['selected_arm', 'risk_tolerance']].value_counts().reset_index(name='count')
-        counts_frame['count'] = counts_frame['count'] / counts_frame['count'].sum()
 
-        sns.lineplot(x='selected_arm', y='count', hue='risk_tolerance', data=counts_frame, ax=axis, marker='o')
-        axis.set_title(solver_names[idx])
-        axis.set_xlim((0, b.num_arms))
-        axis.set_xlabel('Actions by index')
-        axis.set_ylabel('Fraction of samples')
-        axis.grid('k', ls='--', alpha=0.3)
+    regret_subplot(all_metric_frame, ax1)
+    reward_subplot(all_metric_frame, ax2)
+    mean_estimate_subplot(sorted_indices, true_means, all_arms_frame, ax3)
+    std_estimate_subplot(sorted_indices, true_stds, all_arms_frame, ax4)
+    action_counts_subplot(num_timesteps, all_arms_frame, ax5)
+    risk_tolerance_subplot(all_metric_frame, metric_frames, solver_axes, solver_names, num_arms)
 
-    plt.savefig(figname)
+    plt.savefig(plot_filename)
+    plt.close()
 
 def plot_estimates(theta, true_theta, num_arms, num_features, abs_ylim = None, ncol = 4):
     '''
